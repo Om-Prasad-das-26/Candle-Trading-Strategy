@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMA Alert Candle Trading Strategy</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .chart-container { margin: 20px 0; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .metric-card { padding: 15px; border-radius: 8px; background: #f8f9fa; }
+        .loading { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">EMA Alert Candle Trading Strategy</h1>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Strategy Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="strategyForm">
+                            <div class="mb-3">
+                                <label for="symbol" class="form-label">Stock Symbol</label>
+                                <input type="text" class="form-control" id="symbol" value="AAPL" placeholder="e.g., AAPL, MSFT">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="period" class="form-label">Time Period</label>
+                                <select class="form-select" id="period">
+                                    <option value="6mo">6 Months</option>
+                                    <option value="1y" selected>1 Year</option>
+                                    <option value="2y">2 Years</option>
+                                    <option value="5y">5 Years</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="ema_period" class="form-label">EMA Period</label>
+                                <input type="number" class="form-control" id="ema_period" value="5" min="3" max="20">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="risk_reward" class="form-label">Risk:Reward Ratio</label>
+                                <input type="number" class="form-control" id="risk_reward" value="3.0" min="1" max="10" step="0.1">
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="use_filters" checked>
+                                <label class="form-check-label" for="use_filters">
+                                    Use Additional Filters
+                                </label>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100">Analyze Strategy</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Strategy Rules</h5>
+                    </div>
+                    <div class="card-body">
+                        <h6>Alert Candle Identification:</h6>
+                        <ul class="small">
+                            <li>Long Alert: Candle closes completely below 5 EMA</li>
+                            <li>Short Alert: Candle closes completely above 5 EMA</li>
+                        </ul>
+
+                        <h6>Entry Conditions:</h6>
+                        <ul class="small">
+                            <li>Long: Enter when Alert Candle high is breached</li>
+                            <li>Short: Enter when Alert Candle low is breached</li>
+                        </ul>
+
+                        <h6>Risk Management:</h6>
+                        <ul class="small">
+                            <li>Stop Loss: Opposite side of Alert Candle</li>
+                            <li>Take Profit: Minimum 1:3 risk-reward ratio</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadingDiv" class="text-center mt-4 loading">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>Analyzing strategy...</p>
+        </div>
+
+        <div id="resultsDiv" style="display: none;">
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>Performance Metrics</h5>
+                </div>
+                <div class="card-body">
+                    <div id="metricsGrid" class="metrics-grid"></div>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>Strategy Chart</h5>
+                </div>
+                <div class="card-body chart-container">
+                    <img id="strategyChart" class="img-fluid" alt="Strategy Chart">
+                </div>
+            </div>
+        </div>
+
+        <div id="errorDiv" class="alert alert-danger mt-4" style="display: none;"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('strategyForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = {
+                symbol: document.getElementById('symbol').value,
+                period: document.getElementById('period').value,
+                ema_period: document.getElementById('ema_period').value,
+                risk_reward: document.getElementById('risk_reward').value,
+                use_filters: document.getElementById('use_filters').checked
+            };
+
+            // Show loading
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('resultsDiv').style.display = 'none';
+            document.getElementById('errorDiv').style.display = 'none';
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    showError(data.error || 'Analysis failed');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            } finally {
+                document.getElementById('loadingDiv').style.display = 'none';
+            }
+        });
+
+        function displayResults(data) {
+            const metricsGrid = document.getElementById('metricsGrid');
+            metricsGrid.innerHTML = '';
+
+            // Display metrics
+            if (data.metrics && typeof data.metrics === 'object') {
+                for (const [key, value] of Object.entries(data.metrics)) {
+                    const metricCard = document.createElement('div');
+                    metricCard.className = 'metric-card';
+
+                    let displayValue = value;
+                    if (typeof value === 'number') {
+                        if (key.includes('Rate') || key.includes('Ratio') || key.includes('Drawdown')) {
+                            displayValue = (value * 100).toFixed(2) + '%';
+                        } else {
+                            displayValue = value.toFixed(2);
+                        }
+                    }
+
+                    metricCard.innerHTML = `<strong>${key}</strong><br>${displayValue}`;
+                    metricsGrid.appendChild(metricCard);
+                }
+            }
+
+            // Display chart
+            if (data.chart_data) {
+                document.getElementById('strategyChart').src = 'data:image/png;base64,' + data.chart_data;
+            }
+
+            document.getElementById('resultsDiv').style.display = 'block';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
